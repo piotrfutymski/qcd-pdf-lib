@@ -1,6 +1,8 @@
+mod bootstrap_data_creator;
 mod bootstrap_data;
+mod experiment_data;
 
-use bootstrap_data::BootstrapDataCreator;
+use bootstrap_data_creator::BootstrapDataCreator;
 
 fn main() {
     for i in 0..6 {

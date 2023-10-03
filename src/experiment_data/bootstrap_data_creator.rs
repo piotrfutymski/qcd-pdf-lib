@@ -1,10 +1,8 @@
-mod bootstrap_input;
-
 use std::{fs, io};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-pub use bootstrap_input::BootstrapInput;
+pub use crate::bootstrap_data::BootstrapData;
 
 pub struct BootstrapDataCreator{
     mom: i32,
@@ -18,7 +16,7 @@ impl BootstrapDataCreator {
     }
 
     pub fn create_output(&self) -> io::Result<()>{
-        let mut inputs: HashMap<i32, BootstrapInput> = self.get_inputs(true)?;
+        let mut inputs: HashMap<i32, BootstrapData> = self.get_inputs(true)?;
         self.get_inputs(false)?
             .into_iter().for_each(|e|{inputs.insert(e.0, e.1);});
         let mut lines: Vec<(i32, String)> = inputs
@@ -38,7 +36,7 @@ impl BootstrapDataCreator {
         Ok(())
     }
 
-    fn get_inputs(&self, plus_sign: bool) -> io::Result<HashMap<i32, BootstrapInput>> {
+    fn get_inputs(&self, plus_sign: bool) -> io::Result<HashMap<i32, BootstrapData>> {
         Ok(fs::read_dir(self.input_path.clone())?
             .into_iter()
             .filter_map(|e|e.ok())
@@ -53,7 +51,7 @@ impl BootstrapDataCreator {
                     }
                 }
                 ,
-                BootstrapInput::read_from_file(e.path().to_str().unwrap(), plus_sign).unwrap())
+                BootstrapData::read_from_file(e.path().to_str().unwrap(), plus_sign).unwrap())
             )
             .collect())
     }
