@@ -1,3 +1,4 @@
+use std::ops::Div;
 use num::complex::{Complex64};
 use rayon::prelude::*;
 #[derive(Debug)]
@@ -31,12 +32,81 @@ impl BootstrapData {
         Complex64::new(res_sum.0.sqrt(), res_sum.1.sqrt())
     }
 
+    pub fn value(&self) -> Complex64 {
+        self.sample_0
+    }
+
+    pub fn value_error(&self) -> (Complex64, Complex64) {
+        (self.sample_0, self.boot_error())
+    }
+
+    pub fn value_average_error(&self) -> (Complex64, Complex64, Complex64) {
+        (self.sample_0, self.boot_average(), self.boot_error())
+    }
+
+    pub fn perform_operation<F>(&self, operation: F) -> BootstrapData
+        where F: Fn(Complex64) -> Complex64 {
+        BootstrapData {
+            sample_0: operation(self.sample_0),
+            bootstrap_samples: self.bootstrap_samples.iter().map(|e|operation(*e)).collect()
+        }
+    }
+
+    pub fn perform_operation_with_other<F>(&self, other: &BootstrapData, operation: F) -> BootstrapData
+        where F: Fn(Complex64, Complex64) -> Complex64 {
+        BootstrapData {
+            sample_0: operation(self.sample_0, other.sample_0),
+            bootstrap_samples: self.bootstrap_samples.iter().zip(other.bootstrap_samples.iter()).map(|(a,b)|operation(*a,*b)).collect()
+        }
+    }
+
+    pub fn perform_operation_multiple<F>(data: Vec<&BootstrapData>, operation: F) -> BootstrapData
+        where F: Fn(Vec<Complex64>) -> Complex64 {
+        BootstrapData {
+            sample_0: operation(data.iter().map(|e|e.sample_0).collect()),
+            bootstrap_samples: (0..data[0].bootstrap_samples.len()).map(|i|{
+                operation(data.iter().map(|e|e.bootstrap_samples[i]).collect())
+            }).collect()
+        }
+    }
+
+    pub fn perform_operation_multiple_to_multiple<F>(data: Vec<&BootstrapData>, operation: F) -> Vec<BootstrapData>
+        where F: Fn(Vec<Complex64>) -> Vec<Complex64> {
+        let samples_0 = operation(data.iter().map(|e|e.sample_0).collect());
+        let bootstrap_samples: Vec<Vec<Complex64>> = (0..data[0].bootstrap_samples.len()).map(|i|{
+            operation(data.iter().map(|e|e.bootstrap_samples[i]).collect())
+        }).collect();
+        (0..samples_0.len())
+            .map(|i|BootstrapData{
+                sample_0: samples_0[i],
+                bootstrap_samples: bootstrap_samples[i].clone()
+            })
+            .collect()
+    }
+
 }
 
 impl From<Vec<Complex64>> for BootstrapData{
     fn from(value: Vec<Complex64>) -> Self {
-        let sample_0 = value.into_iter().next().expect("Empty vector while creating bootstrap data");
+        let mut value = value.into_iter();
+        let sample_0 = value.next().expect("Empty vector while creating bootstrap data");
         let bootstrap_samples = value.collect();
         BootstrapData { sample_0, bootstrap_samples }
+    }
+}
+
+impl Div for &BootstrapData {
+    type Output = BootstrapData;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.perform_operation_with_other(rhs, |a,b|a/b)
+    }
+}
+
+impl Div for BootstrapData {
+    type Output = BootstrapData;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.perform_operation_with_other(&rhs, |a,b|a/b)
     }
 }
