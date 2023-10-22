@@ -4,8 +4,11 @@ use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::{fs, iter};
 use std::fs::{DirEntry, File};
+use std::hint::black_box;
+use std::io::Write;
 use std::path::Path;
-use num::complex::Complex64;
+use gkquad::single::Integrator;
+use num::complex::{Complex64, ComplexFloat};
 use rayon::iter::IntoParallelRefIterator;
 use crate::experiment_data::bootstrap_data::BootstrapData;
 
@@ -33,13 +36,20 @@ pub struct ExperimentData{
     max_mom: u8,
     max_z: u8,
     data: HashMap<DataInfo, BootstrapData>,
-    reduced_m: HashMap<DataInfo, BootstrapData>
-    //fits: Option<HashMap<u8, Vec<BootstrapData>>>
+    reduced_m: HashMap<DataInfo, BootstrapData>,
+    m_prime: HashMap<DataInfo, BootstrapData>,
+    q: HashMap<DataInfo, BootstrapData>
 }
 
 impl ExperimentData {
 
     const LATTICE_LENGTH: i32 = 48;
+    const ALFA_S_PI: f64 = 0.1287;
+    const C_F: f64 = 4.0 / 3.0;
+
+    const MI_A: f64 = 0.950711;
+
+    const GAMMA_E: f64 = 0.5772156649;
 
     pub fn load_and_calculate(data_path: &Path) -> ExperimentData {
         let data: HashMap<DataInfo, BootstrapData> = data_path
@@ -52,11 +62,17 @@ impl ExperimentData {
         let max_mom = data.keys().map(|e|e.mom).max().unwrap_or_default();
         let max_z = data.keys().map(|e|e.z).max().unwrap_or_default();
         let reduced_m = Self::calculate_reduced_m(&data);
-        ExperimentData{ max_mom, max_z, data, reduced_m }
+        let m_prime = Self::calculate_m_prime(max_mom, &reduced_m);
+        let q = Self::calculate_q(max_mom, &m_prime, &reduced_m);
+        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime, q}
     }
 
-    pub fn convert_to_ioffe_time(mom: u8, z:u8) -> f64 {
-        mom as f64 * z as f64 * 2.0 * PI / Self::LATTICE_LENGTH as f64
+    pub fn convert_to_ioffe_time(mom: f64, z:u8) -> f64 {
+        mom * z as f64 * 2.0 * PI / Self::LATTICE_LENGTH as f64
+    }
+
+    pub fn convert_from_ioffe_time(it: f64, z:u8) -> f64 {
+        it * Self::LATTICE_LENGTH as f64 / (2.0 * PI * z as f64)
     }
 
     pub fn bare_m(&self) -> &HashMap<DataInfo, BootstrapData>{
@@ -75,6 +91,40 @@ impl ExperimentData {
         Self::get_from(self.reduced_m(), mom, z)
     }
 
+    pub fn m_prime(&self) -> &HashMap<DataInfo, BootstrapData> {
+        &self.m_prime
+    }
+
+    pub fn m_prime_value(&self, mom: u8, z:u8) -> &BootstrapData {
+        Self::get_from(self.m_prime(), mom, z)
+    }
+
+    pub fn q(&self) -> &HashMap<DataInfo, BootstrapData> {
+        &self.q
+    }
+
+    pub fn q_value(&self, mom: u8, z:u8) -> &BootstrapData {
+        Self::get_from(self.q(), mom, z)
+    }
+
+    pub fn m_prime_value_it(&self, it: f64, z:u8) -> &BootstrapData {
+        let mom = Self::convert_from_ioffe_time(it, z).round() as u8;
+        Self::get_from(self.m_prime(), mom, z)
+    }
+
+    pub fn generate_output_plot_file(data: &HashMap<DataInfo, BootstrapData>, mom:u8, sample_count:u8, filename:&str, re: bool) {
+        let mut file = File::create(filename).unwrap();
+        for z in 0..sample_count + 1 {
+            let x = Self::convert_to_ioffe_time(mom as f64, z);
+            let bootstrap_data = Self::get_from(data, mom, z);
+            let (y, err) = match re {
+                true => (bootstrap_data.boot_average().re, bootstrap_data.boot_error().re),
+                false => (bootstrap_data.boot_average().im, bootstrap_data.boot_error().im)
+            };
+            file.write(format!("{} {} {}\n", x, y, err).as_bytes()).unwrap();
+        }
+    }
+
     fn calculate_reduced_m_value(data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> BootstrapData{
         let bare = Self::get_from(data, mom, z);
         let bare_0_z = Self::get_from(data, mom, 0);
@@ -85,7 +135,38 @@ impl ExperimentData {
 
     fn calculate_reduced_m(data: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
         data.iter()
+            .filter(|(k,v)|k.z_direction == ZDirection::Average)
             .map(|(k,v)|(*k, Self::calculate_reduced_m_value(data, k.mom, k.z)))
+            .collect()
+    }
+
+    fn calculate_m_prime_value(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> BootstrapData {
+        println!("Calculating m prime value for mom={}, z={}", mom, z);
+        let vec: Vec<&BootstrapData> = (0..max_mom+1)
+            .map(|e|Self::get_from(data, e, z))
+            .collect();
+        BootstrapData::perform_operation_multiple(vec, |c_data|{ Self::integral_m_prim(&c_data, z, mom)})
+    }
+
+    fn calculate_q_value(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> BootstrapData {
+        println!("Calculating q value for mom={}, z={}", mom, z);
+        let mut vec: Vec<&BootstrapData> = (0..max_mom+1)
+            .map(|e|Self::get_from(m, e, z))
+            .collect();
+        vec.push(Self::get_from(m_prime, mom, z));
+        BootstrapData::perform_operation_multiple(vec, |c_data|{ Self::integral_q(&c_data, z, mom)})
+    }
+    fn calculate_m_prime(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
+        data.iter()
+            .filter(|(k,v)|k.z_direction == ZDirection::Average)
+            .map(|(k,v)|(*k, Self::calculate_m_prime_value(max_mom, data, k.mom, k.z)))
+            .collect()
+    }
+
+    fn calculate_q(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
+        m_prime.iter()
+            .filter(|(k,v)|k.z_direction == ZDirection::Average)
+            .map(|(k,v)|(*k, Self::calculate_q_value(max_mom, m_prime, m, k.mom, k.z)))
             .collect()
     }
 
@@ -93,19 +174,67 @@ impl ExperimentData {
         data.get(&DataInfo::new(mom, z)).unwrap()
     }
 
-    /*pub fn fit(&self, z: u8, order: usize) -> Vec<BootstrapData> {
-        let order = order * 2 - 1;
-        let x_values: Vec<f64> = (0..self.max_mom +1).map(|e|e as f64).collect();
-        let full_reduced = self.get_full_reduced_m();
-        let y_values: Vec<&BootstrapData> = (0..self.max_mom +1).map(|i|Self::get_from(&full_reduced, i,z)).collect();
-        BootstrapData::perform_operation_multiple_to_multiple(y_values, |vec|{
-            let (y_re, y_im): (Vec<f64>, Vec<f64>) = vec.iter().map(|e|(e.re, e.im)).unzip();
-            let re_res = polyfit(&x_values, &y_re, order).expect("Can not fit real part");
-            let im_res = polyfit(&x_values, &y_im, order).expect("Can not fit real part");
-            zip(re_res, im_res).map(|(a,b)|Complex64::new(a,b)).collect()
-        })
-    }*/
+    fn linear_interpolation(data: &Vec<Complex64>, v: f64) -> Complex64 {
+        let min_v = v.floor() as u8;
+        let max_v = min_v + 1;
+        let frac = v.fract();
+        if max_v >= data.len() as u8 {
+            return *data.last().unwrap();
+        }
+        let up_v: Complex64 = data[max_v as usize];
+        let down_v: Complex64 = data[min_v as usize];
+        down_v + ((up_v - down_v) * frac)
+    }
 
+    fn integral_m_prim(data: &Vec<Complex64>, z: u8, mom: u8) -> Complex64 {
+        let m: Complex64 = data[mom as usize];
+        let int_mul = - Self::C_F * Self::ALFA_S_PI / 2.0;
+        let g_e = (2.0*Self::GAMMA_E + 1.0).exp();
+        if z == 0 {
+            return m;
+        }
+        let v = 0.25 * (z as f64).powi(2) * Self::MI_A.powi(2)* g_e;
+        let v = v.ln();
+        unsafe {
+            let re = Integrator::new(|x: f64|{
+                let b = (1.0+(x.powi(2)))/(1.0-x);
+                let m_u = Self::linear_interpolation(data, x*mom as f64).re;
+                let res = -v*b * (m_u - m.re);
+                res
+            }).run(0.0..1.0).estimate_unchecked();
+            let im = Integrator::new(|x: f64|{
+                let b = (1.0+(x.powi(2)))/(1.0-x);
+                let m_u = Self::linear_interpolation(data, x*mom as f64).im;
+                let res = -v*b * (m_u - m.im);
+                res
+            }).run(0.0..1.0).estimate_unchecked();
+            let v = m + int_mul * Complex64::new(re, im);
+            v
+        }
+    }
+
+    fn integral_q(data: &Vec<Complex64>, z: u8, mom: u8) -> Complex64 {
+        let mut data_cloned = data.clone();
+        let m_prime = data_cloned.pop().unwrap();
+        let m: Complex64 = data_cloned[mom as usize];
+        let int_mul = - Self::C_F * Self::ALFA_S_PI / 2.0;
+        unsafe {
+            let re = Integrator::new(|x: f64|{
+                let l = 4.0*((1.0-x).ln()/(1.0-x)) - 2.0*(1.0-x);
+                let m_u = Self::linear_interpolation(data, x*mom as f64).re;
+                let res = -l * (m_u - m.re);
+                res
+            }).run(0.0..1.0).estimate_unchecked();
+            let im = Integrator::new(|x: f64|{
+                let l = 4.0*((1.0-x).ln()/(1.0-x)) - 2.0*(1.0-x);
+                let m_u = Self::linear_interpolation(data, x*mom as f64).im;
+                let res = -l * (m_u - m.im);
+                res
+            }).run(0.0..1.0).estimate_unchecked();
+            let v = m_prime + int_mul * Complex64::new(re, im);
+            v
+        }
+    }
 
     fn read_file(file: DirEntry) -> HashMap<DataInfo, BootstrapData> {
         let file_input = fs::read_to_string(file.path()).expect(format!("Can not read file '{}' is not a dir or can not be read", file.path().display()).as_str());

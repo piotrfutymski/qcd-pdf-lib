@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 num = "0.4.1"
 rayon = "1.7.0"
-polyfit-rs = "0.2.1"
+gkquad = "0.0.4"
+clap = { version = "4.4.6", features = ["derive"] }

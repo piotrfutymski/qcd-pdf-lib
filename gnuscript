@@ -1,0 +1,2 @@
+set title 'PDF data'
+plot "data.dat" using 1:2:3 with yerrorbars title "data(v)"

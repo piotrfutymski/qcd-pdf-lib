@@ -1,7 +1,7 @@
-use std::ops::Div;
+use std::ops::{Add, Div, Mul, Sub};
 use num::complex::{Complex64};
 use rayon::prelude::*;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BootstrapData {
     sample_0: Complex64,
     bootstrap_samples: Vec<Complex64>
@@ -108,5 +108,36 @@ impl Div for BootstrapData {
 
     fn div(self, rhs: Self) -> Self::Output {
         self.perform_operation_with_other(&rhs, |a,b|a/b)
+    }
+}
+
+impl Sub for &BootstrapData {
+    type Output = BootstrapData;
+    fn sub(self, rhs: Self) -> Self::Output { self.perform_operation_with_other(rhs, |a,b|a-b) }
+}
+
+impl Sub for BootstrapData {
+    type Output = BootstrapData;
+    fn sub(self, rhs: Self) -> Self::Output { self.perform_operation_with_other(&rhs, |a,b|a-b) }
+}
+
+impl Mul<f64> for BootstrapData {
+    type Output = BootstrapData;
+    fn mul(self, rhs: f64) -> Self::Output { self.perform_operation(|a|a*rhs) }
+}
+
+impl Add for &BootstrapData {
+    type Output = BootstrapData;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.perform_operation_with_other(rhs, |a,b|a+b)
+    }
+}
+
+impl Add for BootstrapData {
+    type Output = BootstrapData;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.perform_operation_with_other(&rhs, |a,b|a+b)
     }
 }
