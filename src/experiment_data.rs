@@ -1,4 +1,5 @@
 mod bootstrap_data;
+mod optimizer;
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
@@ -11,6 +12,7 @@ use gkquad::single::Integrator;
 use num::complex::{Complex64, ComplexFloat};
 use rayon::iter::IntoParallelRefIterator;
 use crate::experiment_data::bootstrap_data::BootstrapData;
+use crate::experiment_data::optimizer::{Optimizer, Parameters};
 
 #[derive(PartialEq, Eq, Hash, Clone, Default, Copy)]
 pub enum ZDirection{
@@ -35,10 +37,14 @@ impl DataInfo {
 pub struct ExperimentData{
     max_mom: u8,
     max_z: u8,
+    max_num_to_average: u8,
     data: HashMap<DataInfo, BootstrapData>,
     reduced_m: HashMap<DataInfo, BootstrapData>,
     m_prime: HashMap<DataInfo, BootstrapData>,
-    q: HashMap<DataInfo, BootstrapData>
+    q: HashMap<DataInfo, BootstrapData>,
+    q_averaged: HashMap<u8, BootstrapData>,
+    best_params_qv: Parameters,
+    best_params_qv2s: Parameters
 }
 
 impl ExperimentData {
@@ -51,7 +57,7 @@ impl ExperimentData {
 
     const GAMMA_E: f64 = 0.5772156649;
 
-    pub fn load_and_calculate(data_path: &Path) -> ExperimentData {
+    pub fn load_and_calculate(data_path: &Path, max_num_to_average: u8) -> ExperimentData {
         let data: HashMap<DataInfo, BootstrapData> = data_path
             .read_dir()
             .expect(format!("Load experiment data failed '{}' is not a dir or can not be read", data_path.display()).as_str())
@@ -64,11 +70,18 @@ impl ExperimentData {
         let reduced_m = Self::calculate_reduced_m(&data);
         let m_prime = Self::calculate_m_prime(max_mom, &reduced_m);
         let q = Self::calculate_q(max_mom, &m_prime, &reduced_m);
-        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime, q}
+        let q_averaged = Self::calculate_q_averaged(&q, max_num_to_average);
+        let best_params_qv = Self::calculate_best_params(&q_averaged, true);
+        let best_params_qv2s = Self::calculate_best_params(&q_averaged, false);
+        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime, q, max_num_to_average, q_averaged, best_params_qv, best_params_qv2s}
     }
 
     pub fn convert_to_ioffe_time(mom: f64, z:u8) -> f64 {
         mom * z as f64 * 2.0 * PI / Self::LATTICE_LENGTH as f64
+    }
+
+    pub fn convert_to_ioffe_time_one_arg(ni: u8) -> f64 {
+        ni as f64 * 2.0 * PI / Self::LATTICE_LENGTH as f64
     }
 
     pub fn convert_from_ioffe_time(it: f64, z:u8) -> f64 {
@@ -107,6 +120,14 @@ impl ExperimentData {
         Self::get_from(self.q(), mom, z)
     }
 
+
+    pub fn q_averaged(&self) -> &HashMap<u8, BootstrapData> {
+        &self.q_averaged
+    }
+    pub fn q_averaged_value(&self, ni: u8) -> &BootstrapData {
+        self.q_averaged.get(&ni).unwrap()
+    }
+
     pub fn m_prime_value_it(&self, it: f64, z:u8) -> &BootstrapData {
         let mom = Self::convert_from_ioffe_time(it, z).round() as u8;
         Self::get_from(self.m_prime(), mom, z)
@@ -125,12 +146,26 @@ impl ExperimentData {
         }
     }
 
+    pub fn generate_output_plot_file_one_arg(data: &HashMap<u8, BootstrapData>, sample_count:u8, filename:&str, re: bool) {
+        let mut file = File::create(filename).unwrap();
+        for ni in 0..sample_count + 1 {
+            let x = Self::convert_to_ioffe_time_one_arg(ni);
+            if let Some(bootstrap_data) = data.get(&ni) {
+                let (y, err) = match re {
+                    true => (bootstrap_data.boot_average().re, bootstrap_data.boot_error().re),
+                    false => (bootstrap_data.boot_average().im, bootstrap_data.boot_error().im)
+                };
+                file.write(format!("{} {} {}\n", x, y, err).as_bytes()).unwrap();
+            }
+        }
+    }
+
     fn calculate_reduced_m_value(data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> BootstrapData{
         let bare = Self::get_from(data, mom, z);
         let bare_0_z = Self::get_from(data, mom, 0);
         let bare_0_v = Self::get_from(data, 0, z);
         let bare_0_0 = Self::get_from(data, 0, 0);
-        ((bare / bare_0_z) / (bare_0_v / bare_0_0))
+        (bare / bare_0_z) / (bare_0_v / bare_0_0)
     }
 
     fn calculate_reduced_m(data: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
@@ -145,7 +180,7 @@ impl ExperimentData {
         let vec: Vec<&BootstrapData> = (0..max_mom+1)
             .map(|e|Self::get_from(data, e, z))
             .collect();
-        BootstrapData::perform_operation_multiple(vec, |c_data|{ Self::integral_m_prim(&c_data, z, mom)})
+        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_m_prim(&c_data, z, mom)})
     }
 
     fn calculate_q_value(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> BootstrapData {
@@ -154,7 +189,16 @@ impl ExperimentData {
             .map(|e|Self::get_from(m, e, z))
             .collect();
         vec.push(Self::get_from(m_prime, mom, z));
-        BootstrapData::perform_operation_multiple(vec, |c_data|{ Self::integral_q(&c_data, z, mom)})
+        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_q(&c_data, z, mom)})
+    }
+
+    fn calculate_q_averaged_value(data: &Vec<&BootstrapData>) -> BootstrapData {
+        BootstrapData::perform_operation_multiple(data, |c_data|{
+            match c_data.len() {
+                1 => c_data[0],
+                _ => c_data.iter().sum::<Complex64>() / (c_data.len() as f64)
+            }
+        })
     }
     fn calculate_m_prime(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
         data.iter()
@@ -168,6 +212,33 @@ impl ExperimentData {
             .filter(|(k,v)|k.z_direction == ZDirection::Average)
             .map(|(k,v)|(*k, Self::calculate_q_value(max_mom, m_prime, m, k.mom, k.z)))
             .collect()
+    }
+
+    fn calculate_q_averaged(q: &HashMap<DataInfo, BootstrapData>, max_z: u8) -> HashMap<u8, BootstrapData> {
+        let mut grouped_map = HashMap::new();
+
+        q.iter()
+            .filter(|(k,v)|k.z_direction == ZDirection::Average && k.z <= max_z && k.mom != 0)
+            .for_each(|(k,v)|{
+                let num = k.z *k.mom;
+                grouped_map.entry(num).or_insert(Vec::new()).push(v)
+            });
+
+        grouped_map
+            .iter()
+            .map(|(k,v)|(*k, Self::calculate_q_averaged_value(v)))
+            .collect()
+    }
+
+    fn calculate_best_params(q_averaged: &HashMap<u8, BootstrapData>, real: bool) -> Parameters {
+        let mut optimizer = Optimizer::new(
+            q_averaged.iter()
+                .filter(|(k,v)|**k != 0)
+                .map(|(k,v)|(Self::convert_to_ioffe_time_one_arg(*k), v.clone()))
+                .collect(),
+            real
+        );
+        optimizer.optimize(100,0.01)
     }
 
     fn get_from(data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> &BootstrapData {

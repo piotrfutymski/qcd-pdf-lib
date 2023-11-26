@@ -18,6 +18,10 @@ impl BootstrapData {
     }
 
     pub fn boot_error(&self) -> Complex64 {
+        self.boot_error_squared().sqrt()
+    }
+
+    pub fn boot_error_squared(&self) -> Complex64 {
         let boot_average = self.boot_average();
         let sample_size: f64 = self.bootstrap_samples.len() as f64;
         let res_sum: (f64,f64) = self.bootstrap_samples
@@ -29,7 +33,7 @@ impl BootstrapData {
             .reduce(||{(0.0,0.0)}, |(a,b), (c,d)|{
                 (a+c, b+d)
             });
-        Complex64::new(res_sum.0.sqrt(), res_sum.1.sqrt())
+        Complex64::new(res_sum.0, res_sum.1)
     }
 
     pub fn value(&self) -> Complex64 {
@@ -60,7 +64,7 @@ impl BootstrapData {
         }
     }
 
-    pub fn perform_operation_multiple<F>(data: Vec<&BootstrapData>, operation: F) -> BootstrapData
+    pub fn perform_operation_multiple<F>(data: &Vec<&BootstrapData>, operation: F) -> BootstrapData
         where F: Fn(Vec<Complex64>) -> Complex64 {
         BootstrapData {
             sample_0: operation(data.iter().map(|e|e.sample_0).collect()),

@@ -34,13 +34,23 @@ fn main() {
     let args = Args::parse();
 
     println!("Calculating data from ./data/samples");
-    let experiment_data = ExperimentData::load_and_calculate(Path::new("./data/samples"));
+    let experiment_data = ExperimentData::load_and_calculate(Path::new("./data/samples"), 8);
     println!("Data calculated, printing output");
-    let data = match args.matrix.as_str() {
-        "m" => experiment_data.reduced_m(),
-        "mp" => experiment_data.m_prime(),
-        _ => experiment_data.q()
-    };
-    ExperimentData::generate_output_plot_file(data, args.momentum, args.sample_count, &args.filename, !args.imaginary);
+    if args.matrix.as_str() == "qa"{
+        ExperimentData::generate_output_plot_file_one_arg(experiment_data.q_averaged(), args.sample_count, &args.filename, !args.imaginary);
+    } else {
+        let data = match args.matrix.as_str() {
+            "m" => experiment_data.reduced_m(),
+            "mp" => experiment_data.m_prime(),
+            _ => experiment_data.q()
+        };
+        ExperimentData::generate_output_plot_file(data, args.momentum, args.sample_count, &args.filename, !args.imaginary);
+    }
 
+}
+
+
+#[test]
+fn test() {
+    let experiment_data = ExperimentData::load_and_calculate(Path::new("./data/samples"), 8);
 }

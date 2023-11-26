@@ -9,4 +9,6 @@ edition = "2021"
 num = "0.4.1"
 rayon = "1.7.0"
 gkquad = "0.0.4"
+special = "0.10.2"
 clap = { version = "4.4.6", features = ["derive"] }
+rand = "0.8.5"
