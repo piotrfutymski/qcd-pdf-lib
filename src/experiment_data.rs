@@ -43,8 +43,8 @@ pub struct ExperimentData{
     m_prime: HashMap<DataInfo, BootstrapData>,
     q: HashMap<DataInfo, BootstrapData>,
     q_averaged: HashMap<u8, BootstrapData>,
-    best_params_qv: Parameters,
-    best_params_qv2s: Parameters
+    best_params_qv: Parameters<BootstrapData>,
+    best_params_qv2s: Parameters<BootstrapData>
 }
 
 impl ExperimentData {
@@ -230,7 +230,7 @@ impl ExperimentData {
             .collect()
     }
 
-    fn calculate_best_params(q_averaged: &HashMap<u8, BootstrapData>, real: bool) -> Parameters {
+    fn calculate_best_params(q_averaged: &HashMap<u8, BootstrapData>, real: bool) -> Parameters<BootstrapData> {
         let mut optimizer = Optimizer::new(
             q_averaged.iter()
                 .filter(|(k,v)|**k != 0)

@@ -1,6 +1,8 @@
 use std::cmp::max;
 use std::collections::HashMap;
+use std::ops::{Add, Div};
 use gkquad::prelude::Integrator;
+use num::complex::Complex64;
 use rand::{Rng, thread_rng};
 use rand::rngs::ThreadRng;
 use special::Gamma;
@@ -8,13 +10,13 @@ use crate::experiment_data::bootstrap_data::BootstrapData;
 
 
 #[derive(Debug, Copy, Clone)]
-pub struct Parameters {
-    a: f64,
-    b: f64,
-    n: f64
+pub struct Parameters<T> {
+    a: T,
+    b: T,
+    n: T
 }
 
-impl Parameters {
+impl Parameters<f64> {
     pub fn random_new() -> Self{
         let mut rng = rand::thread_rng();
         Parameters{
@@ -25,15 +27,15 @@ impl Parameters {
     }
 
     fn mutate_soft(x: f64, rng: &mut ThreadRng) -> f64 {
-        f64::max(rng.gen::<f64>() * 0.01 - 0.005 + x, 0.001)
+        x + (rng.gen::<f64>() * 0.1 - 0.05)
     }
 
     fn mutate_hard(x: f64, rng: &mut ThreadRng) -> f64 {
-        f64::max(rng.gen::<f64>() * 1.0 - 0.5 + x, 0.001)
+        x + (rng.gen::<f64>() * 0.5 - 0.25)
     }
 
     fn mutate_number(x: f64, rng: &mut ThreadRng) -> f64 {
-        match rng.gen::<f64>() > 0.8 {
+        match rng.gen::<f64>() > 0.5 {
             true => Self::mutate_hard(x, rng),
             false => Self::mutate_soft(x, rng)
         }
@@ -59,26 +61,25 @@ impl Parameters {
 
 pub struct Optimizer {
     q_data: Vec<(f64, BootstrapData)>,
-    population: Vec<Parameters>,
+    population: Vec<Parameters<f64>>,
     real: bool,
     step: usize,
-    last_best: (Parameters, f64)
+    last_best: (Parameters<f64>, f64)
 }
 
 impl Optimizer {
 
     pub fn new(q_data: Vec<(f64, BootstrapData)>, real: bool) -> Self{
-        Optimizer{q_data, real, population: (0..200).map(|_|Parameters::random_new()).collect(), step: 0, last_best: (Parameters{a:0.0,b:0.0,n:0.0}, 10e15)}
+        Optimizer{q_data, real, population: (0..100).map(|_|Parameters::random_new()).collect(), step: 0, last_best: (Parameters{a:0.0,b:0.0,n:0.0}, 10e15)}
     }
 
-    pub fn population_step(&mut self) -> f64{
+    pub fn population_step(&mut self, sample_num: usize) -> f64{
         self.step += 1;
-        println!("Calculating best population for step {}", self.step);
-        let eval_func:Box<dyn Fn(&Parameters) -> f64> = match self.real {
-            true => Box::new(|p:&Parameters| self.calculate_qv(p.a, p.b)),
-            false => Box::new(|p:&Parameters| self.calculate_qv2s(p.a, p.b, p.n))
+        let eval_func:Box<dyn Fn(&Parameters<f64>) -> f64> = match self.real {
+            true => Box::new(|p:&Parameters<f64>| self.calculate_qv(p.a, p.b, sample_num)),
+            false => Box::new(|p:&Parameters<f64>| self.calculate_qv2s(p.a, p.b, p.n, sample_num))
         };
-        let mut population_with_values: Vec<(Parameters, f64)> = self.population
+        let mut population_with_values: Vec<(Parameters<f64>, f64)> = self.population
             .iter()
             .map(|e|(*e, eval_func(e)))
             .collect();
@@ -86,17 +87,15 @@ impl Optimizer {
         drop(eval_func);
         let res = self.last_best.1 - population_with_values[0].1;
         self.last_best = (population_with_values[0].0, population_with_values[0].1);
-        println!("Best from this population {:?} with value: {} vs last value diff: {}", population_with_values[0].0, population_with_values[0].1, res);
-        println!("Mutating best 20 parameter sets");
-        let mut to_append: Vec<Parameters> = Vec::new();
+        println!("SAMPLE {} Best from this population {:?} with value: {} vs last value diff: {}", self.step, population_with_values[0].0, population_with_values[0].1, res);
+        let mut to_append: Vec<Parameters<f64>> = Vec::new();
         to_append.push(population_with_values[0].0);
         let mut new_population= population_with_values.iter()
             .take(40)
             .map(|(k,v)|k.mutate())
-            .collect::<Vec<Parameters>>();
-        println!("Merging randomly for new population");
+            .collect::<Vec<Parameters<f64>>>();
         let mut rng = thread_rng();
-        for _ in 0..159 {
+        for _ in 0..59 {
             let i: usize = rng.gen::<usize>() % 40;
             let j :usize = rng.gen::<usize>() % 40;
             to_append.push(new_population[i].merge(&new_population[j]));
@@ -106,16 +105,40 @@ impl Optimizer {
         res
     }
 
-    pub fn optimize(&mut self, max_steps: usize, delta: f64) -> Parameters {
-        let mut deltas = [10e15, 10e15, 10e15];
+    pub fn optimize(&mut self, max_steps: usize, delta: f64) -> Parameters<BootstrapData> {
+        let size = self.q_data.get(0).unwrap().1.len();
+        let mut i = 0;
+        let mut vec_a = Vec::new();
+        let mut vec_b = Vec::new();
+        let mut vec_n = Vec::new();
+        while i < size {
+            let res = self.optimize_one(max_steps, delta, i);
+            self.step = 0;
+            vec_a.push(Complex64::new(res.a, 0.0));
+            vec_b.push(Complex64::new(res.a, 0.0));
+            vec_n.push(Complex64::new(res.a, 0.0));
+            i+=1;
+        }
+        let res = self.optimize_one(max_steps, delta, i);
+        Parameters{
+            a: BootstrapData::new(vec_a, Complex64::new(res.a, 0.0)),
+            b: BootstrapData::new(vec_b, Complex64::new(res.b, 0.0)),
+            n: BootstrapData::new(vec_n, Complex64::new(res.n, 0.0)),
+        }
+    }
+
+    pub fn optimize_one(&mut self, max_steps: usize, delta: f64, index:usize) -> Parameters<f64> {
+        let mut last_jump = 0;
+        println!("Calculating index {}", index);
         loop {
-            let current_delta = self.population_step();
-            if current_delta < deltas[2] {
-                deltas = [deltas[0], deltas[1], current_delta];
-                deltas.sort_by(|a,b|a.total_cmp(b));
+            let current_delta = self.population_step(index);
+            if current_delta > delta{
+                last_jump = 0
+            } else {
+                last_jump += 1;
             }
             let step = self.step;
-            if step >= max_steps {
+            if step >= max_steps || last_jump >= 5 {
                 break;
             }
         }
@@ -138,43 +161,43 @@ impl Optimizer {
             v
         }
     }
-    pub fn calculate_chi_elem_a_b_n(ni: f64, data: &BootstrapData, a: f64, b:f64, n: f64, real: bool) -> f64 {
+    pub fn calculate_chi_elem_a_b_n(ni: f64, data: &BootstrapData, a: f64, b:f64, n: f64, real: bool, sample_num: usize) -> f64 {
         match real {
             true => {
                 let int_res = Self::integral_a_b_n_cos(a,b,n,ni);
-                let res = (data.boot_average().re - int_res).powi(2)/data.boot_error_squared().re;
+                let res = (data.get_sample(sample_num).re - int_res).powi(2)/data.boot_error_squared().re;
                 res
             }
             false => {
                 let int_res = Self::integral_a_b_n_sin(a,b,n,ni);
-                let res = (data.boot_average().im - int_res).powi(2)/data.boot_error_squared().im;
+                let res = (data.get_sample(sample_num).im - int_res).powi(2)/data.boot_error_squared().im;
                 res
             }
         }
     }
 
-    pub fn calculate_chi_qv(data: &Vec<(f64, BootstrapData)>, a: f64, b:f64) -> f64 {
+    pub fn calculate_chi_qv(data: &Vec<(f64, BootstrapData)>, a: f64, b:f64, sample_num: usize) -> f64 {
         let n = Gamma::gamma(a + b + 2.0) / (Gamma::gamma(a+1.0)*Gamma::gamma(b+1.0));
         let res = data
             .iter()
-            .map(|(ni,d)|Self::calculate_chi_elem_a_b_n(*ni, d, a, b, n, true))
+            .map(|(ni,d)|Self::calculate_chi_elem_a_b_n(*ni, d, a, b, n, true,sample_num))
             .sum();
         res
     }
 
-    pub fn calculate_chi_qv2s(data: &Vec<(f64, BootstrapData)>, a: f64, b:f64, n:f64) -> f64 {
+    pub fn calculate_chi_qv2s(data: &Vec<(f64, BootstrapData)>, a: f64, b:f64, n:f64, sample_num: usize) -> f64 {
         let res = data
             .iter()
-            .map(|(ni,d)|Self::calculate_chi_elem_a_b_n(*ni, d, a, b, n, false))
+            .map(|(ni,d)|Self::calculate_chi_elem_a_b_n(*ni, d, a, b, n, false,sample_num))
             .sum();
         res
     }
 
-    pub fn calculate_qv(&self, a: f64, b:f64) -> f64 {
-        Self::calculate_chi_qv(&self.q_data, a, b)
+    pub fn calculate_qv(&self, a: f64, b:f64, sample_num: usize) -> f64 {
+        Self::calculate_chi_qv(&self.q_data, a, b, sample_num)
     }
 
-    pub fn calculate_qv2s(&self, a: f64, b:f64, n: f64) -> f64 {
-        Self::calculate_chi_qv2s(&self.q_data, a, b, n)
+    pub fn calculate_qv2s(&self, a: f64, b:f64, n: f64, sample_num: usize) -> f64 {
+        Self::calculate_chi_qv2s(&self.q_data, a, b, n, sample_num)
     }
 }

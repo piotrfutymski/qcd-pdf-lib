@@ -13,12 +13,31 @@ impl BootstrapData {
         self.bootstrap_samples.par_iter().sum::<Complex64>() / (self.bootstrap_samples.len() as f64)
     }
 
+    pub fn new(samples: Vec<Complex64>, sample_0: Complex64) -> Self {
+        BootstrapData{
+            sample_0,
+            bootstrap_samples: samples,
+        }
+    }
+
     pub fn get_sample_0(&self) -> Complex64 {
         self.sample_0
     }
 
     pub fn boot_error(&self) -> Complex64 {
         self.boot_error_squared().sqrt()
+    }
+
+    pub fn len(&self) -> usize {
+        self.bootstrap_samples.len()
+    }
+
+    pub fn get_sample(&self, index: usize) -> Complex64 {
+        return if index > self.bootstrap_samples.len() {
+            self.sample_0
+        } else {
+            self.bootstrap_samples[index]
+        }
     }
 
     pub fn boot_error_squared(&self) -> Complex64 {
