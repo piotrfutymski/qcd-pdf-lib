@@ -1,6 +1,6 @@
-use std::cmp::max;
-use std::collections::HashMap;
-use std::ops::{Add, Div};
+
+
+
 use gkquad::prelude::Integrator;
 use num::complex::Complex64;
 use rand::{Rng, thread_rng};
@@ -92,7 +92,7 @@ impl Optimizer {
         to_append.push(population_with_values[0].0);
         let mut new_population= population_with_values.iter()
             .take(40)
-            .map(|(k,v)|k.mutate())
+            .map(|(k,_v)|k.mutate())
             .collect::<Vec<Parameters<f64>>>();
         let mut rng = thread_rng();
         for _ in 0..59 {

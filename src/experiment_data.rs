@@ -3,14 +3,14 @@ mod optimizer;
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
-use std::{fs, iter};
+use std::{fs};
 use std::fs::{DirEntry, File};
-use std::hint::black_box;
+
 use std::io::Write;
 use std::path::Path;
 use gkquad::single::Integrator;
 use num::complex::{Complex64, ComplexFloat};
-use rayon::iter::IntoParallelRefIterator;
+
 use crate::experiment_data::bootstrap_data::BootstrapData;
 use crate::experiment_data::optimizer::{Optimizer, Parameters};
 
@@ -188,8 +188,8 @@ impl ExperimentData {
 
     fn calculate_reduced_m(data: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
         data.iter()
-            .filter(|(k,v)|k.z_direction == ZDirection::Average)
-            .map(|(k,v)|(*k, Self::calculate_reduced_m_value(data, k.mom, k.z)))
+            .filter(|(k,_v)|k.z_direction == ZDirection::Average)
+            .map(|(k,_v)|(*k, Self::calculate_reduced_m_value(data, k.mom, k.z)))
             .collect()
     }
 
@@ -220,15 +220,15 @@ impl ExperimentData {
     }
     fn calculate_m_prime(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
         data.iter()
-            .filter(|(k,v)|k.z_direction == ZDirection::Average)
-            .map(|(k,v)|(*k, Self::calculate_m_prime_value(max_mom, data, k.mom, k.z)))
+            .filter(|(k,_v)|k.z_direction == ZDirection::Average)
+            .map(|(k,_v)|(*k, Self::calculate_m_prime_value(max_mom, data, k.mom, k.z)))
             .collect()
     }
 
     fn calculate_q(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
         m_prime.iter()
-            .filter(|(k,v)|k.z_direction == ZDirection::Average)
-            .map(|(k,v)|(*k, Self::calculate_q_value(max_mom, m_prime, m, k.mom, k.z)))
+            .filter(|(k,_v)|k.z_direction == ZDirection::Average)
+            .map(|(k,_v)|(*k, Self::calculate_q_value(max_mom, m_prime, m, k.mom, k.z)))
             .collect()
     }
 
@@ -236,7 +236,7 @@ impl ExperimentData {
         let mut grouped_map = HashMap::new();
 
         q.iter()
-            .filter(|(k,v)|k.z_direction == ZDirection::Average && k.z <= max_z && k.mom != 0)
+            .filter(|(k,_v)|k.z_direction == ZDirection::Average && k.z <= max_z && k.mom != 0)
             .for_each(|(k,v)|{
                 let num = k.z *k.mom;
                 grouped_map.entry(num).or_insert(Vec::new()).push(v)
@@ -251,7 +251,7 @@ impl ExperimentData {
     fn calculate_best_params(q_averaged: &HashMap<u8, BootstrapData>, real: bool) -> Parameters<BootstrapData> {
         let mut optimizer = Optimizer::new(
             q_averaged.iter()
-                .filter(|(k,v)|**k != 0)
+                .filter(|(k,_v)|**k != 0)
                 .map(|(k,v)|(Self::convert_to_ioffe_time_one_arg(*k), v.clone()))
                 .collect(),
             real
@@ -302,7 +302,7 @@ impl ExperimentData {
         }
     }
 
-    fn integral_q(data: &Vec<Complex64>, z: u8, mom: u8) -> Complex64 {
+    fn integral_q(data: &Vec<Complex64>, _z: u8, mom: u8) -> Complex64 {
         let mut data_cloned = data.clone();
         let m_prime = data_cloned.pop().unwrap();
         let m: Complex64 = data_cloned[mom as usize];
