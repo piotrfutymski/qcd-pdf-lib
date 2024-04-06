@@ -13,19 +13,23 @@ struct Args {
 
     /// Data from imaginary Part
     #[arg(short, long)]
-    imaginary: bool,
+    imaginary: Option<bool>,
 
     /// Sample count
     #[arg(short, long)]
-    sample_count: u8,
+    sample_count: Option<u8>,
 
     /// Momentum
     #[arg(long)]
-    momentum: u8,
+    momentum: Option<u8>,
 
     /// Filename
     #[arg(short, long)]
-    filename: String
+    filename: Option<String>,
+
+    /// Num to average
+    #[arg(short, long)]
+    num_to_average: Option<u8>
 
 }
 
@@ -34,17 +38,17 @@ fn main() {
     let args = Args::parse();
 
     println!("Calculating data from ./data/samples");
-    let experiment_data = ExperimentData::load_and_calculate(Path::new("./data/samples"), 8);
+    let mut experiment_data = ExperimentData::load(Path::new("./data/samples"), args.num_to_average.unwrap_or(8));
     println!("Data calculated, printing output");
     if args.matrix.as_str() == "qa"{
-        ExperimentData::generate_output_plot_file_one_arg(experiment_data.q_averaged(), args.sample_count, &args.filename, !args.imaginary);
+        ExperimentData::generate_output_plot_file_one_arg(experiment_data.q_averaged(), args.sample_count.unwrap_or(23), &args.filename.unwrap_or("data.dat".to_string()), !args.imaginary.unwrap_or(false));
     } else {
         let data = match args.matrix.as_str() {
             "m" => experiment_data.reduced_m(),
             "mp" => experiment_data.m_prime(),
             _ => experiment_data.q()
         };
-        ExperimentData::generate_output_plot_file(data, args.momentum, args.sample_count, &args.filename, !args.imaginary);
+        ExperimentData::generate_output_plot_file(data, args.momentum.unwrap_or(0), args.sample_count.unwrap_or(23), &args.filename.unwrap_or("data.dat".to_string()), !args.imaginary.unwrap_or(false));
     }
 
 }
@@ -52,5 +56,5 @@ fn main() {
 
 #[test]
 fn test() {
-    let experiment_data = ExperimentData::load_and_calculate(Path::new("./data/samples"), 8);
+    let experiment_data = ExperimentData::load(Path::new("./data/samples"), 8);
 }

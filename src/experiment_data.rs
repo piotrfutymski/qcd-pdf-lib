@@ -40,11 +40,11 @@ pub struct ExperimentData{
     max_num_to_average: u8,
     data: HashMap<DataInfo, BootstrapData>,
     reduced_m: HashMap<DataInfo, BootstrapData>,
-    m_prime: HashMap<DataInfo, BootstrapData>,
-    q: HashMap<DataInfo, BootstrapData>,
-    q_averaged: HashMap<u8, BootstrapData>,
-    best_params_qv: Parameters<BootstrapData>,
-    best_params_qv2s: Parameters<BootstrapData>
+    m_prime: Option<HashMap<DataInfo, BootstrapData>>,
+    q: Option<HashMap<DataInfo, BootstrapData>>,
+    q_averaged: Option<HashMap<u8, BootstrapData>>,
+    best_params_qv: Option<Parameters<BootstrapData>>,
+    best_params_qv2s: Option<Parameters<BootstrapData>>
 }
 
 impl ExperimentData {
@@ -57,7 +57,7 @@ impl ExperimentData {
 
     const GAMMA_E: f64 = 0.5772156649;
 
-    pub fn load_and_calculate(data_path: &Path, max_num_to_average: u8) -> ExperimentData {
+    pub fn load(data_path: &Path, max_num_to_average: u8) -> ExperimentData {
         let data: HashMap<DataInfo, BootstrapData> = data_path
             .read_dir()
             .expect(format!("Load experiment data failed '{}' is not a dir or can not be read", data_path.display()).as_str())
@@ -68,12 +68,11 @@ impl ExperimentData {
         let max_mom = data.keys().map(|e|e.mom).max().unwrap_or_default();
         let max_z = data.keys().map(|e|e.z).max().unwrap_or_default();
         let reduced_m = Self::calculate_reduced_m(&data);
-        let m_prime = Self::calculate_m_prime(max_mom, &reduced_m);
-        let q = Self::calculate_q(max_mom, &m_prime, &reduced_m);
-        let q_averaged = Self::calculate_q_averaged(&q, max_num_to_average);
+        /*
         let best_params_qv = Self::calculate_best_params(&q_averaged, true);
         let best_params_qv2s = Self::calculate_best_params(&q_averaged, false);
-        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime, q, max_num_to_average, q_averaged, best_params_qv, best_params_qv2s}
+         */
+        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime: None, q: None, max_num_to_average, q_averaged: None, best_params_qv: None, best_params_qv2s: None}
     }
 
     pub fn convert_to_ioffe_time(mom: f64, z:u8) -> f64 {
@@ -104,31 +103,50 @@ impl ExperimentData {
         Self::get_from(self.reduced_m(), mom, z)
     }
 
-    pub fn m_prime(&self) -> &HashMap<DataInfo, BootstrapData> {
-        &self.m_prime
+    pub fn m_prime(&mut self) -> &HashMap<DataInfo, BootstrapData> {
+        if self.m_prime.is_none() {
+            let mom = self.max_mom;
+            self.m_prime = Some(Self::calculate_m_prime(mom, &self.reduced_m));
+            self.m_prime()
+        }else{
+            self.m_prime.as_ref().unwrap()
+        }
     }
 
-    pub fn m_prime_value(&self, mom: u8, z:u8) -> &BootstrapData {
+    pub fn m_prime_value(&mut self, mom: u8, z:u8) -> &BootstrapData {
         Self::get_from(self.m_prime(), mom, z)
     }
 
-    pub fn q(&self) -> &HashMap<DataInfo, BootstrapData> {
-        &self.q
+    pub fn q(&mut self) -> &HashMap<DataInfo, BootstrapData> {
+        if self.q.is_none(){
+            self.m_prime();
+            let reduced = self.m_prime.as_ref().unwrap();
+            self.q = Some(Self::calculate_q(self.max_mom, reduced, &self.reduced_m));
+            self.q()
+        }else{
+            self.q.as_ref().unwrap()
+        }
     }
 
-    pub fn q_value(&self, mom: u8, z:u8) -> &BootstrapData {
+    pub fn q_value(&mut self, mom: u8, z:u8) -> &BootstrapData {
         Self::get_from(self.q(), mom, z)
     }
 
 
-    pub fn q_averaged(&self) -> &HashMap<u8, BootstrapData> {
-        &self.q_averaged
+    pub fn q_averaged(&mut self) -> &HashMap<u8, BootstrapData> {
+        if self.q_averaged.is_none(){
+            let av = self.max_num_to_average;
+            self.q_averaged = Some(Self::calculate_q_averaged(&self.q(), av));
+            self.q_averaged()
+        }else{
+            self.q_averaged.as_ref().unwrap()
+        }
     }
-    pub fn q_averaged_value(&self, ni: u8) -> &BootstrapData {
-        self.q_averaged.get(&ni).unwrap()
+    pub fn q_averaged_value(&mut self, ni: u8) -> &BootstrapData {
+        self.q_averaged().get(&ni).unwrap()
     }
 
-    pub fn m_prime_value_it(&self, it: f64, z:u8) -> &BootstrapData {
+    pub fn m_prime_value_it(&mut self, it: f64, z:u8) -> &BootstrapData {
         let mom = Self::convert_from_ioffe_time(it, z).round() as u8;
         Self::get_from(self.m_prime(), mom, z)
     }
