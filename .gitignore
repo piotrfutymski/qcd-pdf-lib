@@ -1,4 +1,4 @@
 /target
 /.idea
 /data
-data.dat
+*.dat

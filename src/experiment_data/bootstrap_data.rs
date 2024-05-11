@@ -25,7 +25,8 @@ impl BootstrapData {
     }
 
     pub fn boot_error(&self) -> Complex64 {
-        self.boot_error_squared().sqrt()
+        let boot_error_squared = self.boot_error_squared();
+        return Complex64::new(boot_error_squared.re.sqrt(), boot_error_squared.im.sqrt());
     }
 
     pub fn len(&self) -> usize {

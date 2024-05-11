@@ -1,17 +1,21 @@
 mod bootstrap_data;
 mod optimizer;
+mod function_estimator;
 
 use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::{fs};
+use std::fmt::format;
 use std::fs::{DirEntry, File};
 
 use std::io::Write;
 use std::path::Path;
-use gkquad::single::Integrator;
+use gkquad::prelude::AUTO;
+use gkquad::single::{IntegrationConfig, Integrator};
 use num::complex::{Complex64, ComplexFloat};
 
 use crate::experiment_data::bootstrap_data::BootstrapData;
+use crate::experiment_data::function_estimator::ToFunctionEstimator;
 use crate::experiment_data::optimizer::{Optimizer, Parameters};
 
 #[derive(PartialEq, Eq, Hash, Clone, Default, Copy)]
@@ -44,7 +48,8 @@ pub struct ExperimentData{
     q: Option<HashMap<DataInfo, BootstrapData>>,
     q_averaged: Option<HashMap<u8, BootstrapData>>,
     best_params_qv: Option<Parameters<BootstrapData>>,
-    best_params_qv2s: Option<Parameters<BootstrapData>>
+    best_params_qv2s: Option<Parameters<BootstrapData>>,
+    estimator: String
 }
 
 impl ExperimentData {
@@ -57,11 +62,12 @@ impl ExperimentData {
 
     const GAMMA_E: f64 = 0.5772156649;
 
-    pub fn load(data_path: &Path, max_num_to_average: u8) -> ExperimentData {
+    pub fn load(data_path: &Path, max_num_to_average: u8, polarization_type: &str, estimator: &str) -> ExperimentData {
         let data: HashMap<DataInfo, BootstrapData> = data_path
             .read_dir()
             .expect(format!("Load experiment data failed '{}' is not a dir or can not be read", data_path.display()).as_str())
             .filter_map(Result::ok)
+            .filter(|e|e.file_name().to_str().unwrap().ends_with(format!("{}.dat",polarization_type).as_str()))
             .map(ExperimentData::read_file)
             .flatten()
             .collect();
@@ -72,7 +78,7 @@ impl ExperimentData {
         let best_params_qv = Self::calculate_best_params(&q_averaged, true);
         let best_params_qv2s = Self::calculate_best_params(&q_averaged, false);
          */
-        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime: None, q: None, max_num_to_average, q_averaged: None, best_params_qv: None, best_params_qv2s: None}
+        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime: None, q: None, max_num_to_average, q_averaged: None, best_params_qv: None, best_params_qv2s: None, estimator: estimator.to_string()}
     }
 
     pub fn convert_to_ioffe_time(mom: f64, z:u8) -> f64 {
@@ -106,7 +112,7 @@ impl ExperimentData {
     pub fn m_prime(&mut self) -> &HashMap<DataInfo, BootstrapData> {
         if self.m_prime.is_none() {
             let mom = self.max_mom;
-            self.m_prime = Some(Self::calculate_m_prime(mom, &self.reduced_m));
+            self.m_prime = Some(Self::calculate_m_prime(mom, &self.reduced_m, &self.estimator));
             self.m_prime()
         }else{
             self.m_prime.as_ref().unwrap()
@@ -121,7 +127,7 @@ impl ExperimentData {
         if self.q.is_none(){
             self.m_prime();
             let reduced = self.m_prime.as_ref().unwrap();
-            self.q = Some(Self::calculate_q(self.max_mom, reduced, &self.reduced_m));
+            self.q = Some(Self::calculate_q(self.max_mom, reduced, &self.reduced_m, self.estimator.as_str()));
             self.q()
         }else{
             self.q.as_ref().unwrap()
@@ -151,10 +157,10 @@ impl ExperimentData {
         Self::get_from(self.m_prime(), mom, z)
     }
 
-    pub fn generate_output_plot_file(data: &HashMap<DataInfo, BootstrapData>, mom:u8, sample_count:u8, filename:&str, re: bool) {
+    pub fn generate_output_plot_file(data: &HashMap<DataInfo, BootstrapData>, mom:u8, sample_count:u8, filename:&str, re: bool, not_ioffe: bool) {
         let mut file = File::create(filename).unwrap();
         for z in 0..sample_count + 1 {
-            let x = Self::convert_to_ioffe_time(mom as f64, z);
+            let x = match not_ioffe { true => z as f64, _ => Self::convert_to_ioffe_time(mom as f64, z) };
             let bootstrap_data = Self::get_from(data, mom, z);
             let (y, err) = match re {
                 true => (bootstrap_data.boot_average().re, bootstrap_data.boot_error().re),
@@ -193,21 +199,21 @@ impl ExperimentData {
             .collect()
     }
 
-    fn calculate_m_prime_value(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> BootstrapData {
+    fn calculate_m_prime_value(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8, estimator: &str) -> BootstrapData {
         println!("Calculating m prime value for mom={}, z={}", mom, z);
         let vec: Vec<&BootstrapData> = (0..max_mom+1)
             .map(|e|Self::get_from(data, e, z))
             .collect();
-        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_m_prim(&c_data, z, mom)})
+        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_m_prim(&c_data, z, mom, estimator)})
     }
 
-    fn calculate_q_value(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> BootstrapData {
+    fn calculate_q_value(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8, estimator: &str) -> BootstrapData {
         println!("Calculating q value for mom={}, z={}", mom, z);
         let mut vec: Vec<&BootstrapData> = (0..max_mom+1)
             .map(|e|Self::get_from(m, e, z))
             .collect();
         vec.push(Self::get_from(m_prime, mom, z));
-        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_q(&c_data, z, mom)})
+        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_q(&c_data, z, mom, estimator)})
     }
 
     fn calculate_q_averaged_value(data: &Vec<&BootstrapData>) -> BootstrapData {
@@ -218,17 +224,17 @@ impl ExperimentData {
             }
         })
     }
-    fn calculate_m_prime(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
+    fn calculate_m_prime(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>, estimator: &str) -> HashMap<DataInfo, BootstrapData>{
         data.iter()
             .filter(|(k,_v)|k.z_direction == ZDirection::Average)
-            .map(|(k,_v)|(*k, Self::calculate_m_prime_value(max_mom, data, k.mom, k.z)))
+            .map(|(k,_v)|(*k, Self::calculate_m_prime_value(max_mom, data, k.mom, k.z, estimator)))
             .collect()
     }
 
-    fn calculate_q(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>) -> HashMap<DataInfo, BootstrapData>{
+    fn calculate_q(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, estimator: &str) -> HashMap<DataInfo, BootstrapData>{
         m_prime.iter()
             .filter(|(k,_v)|k.z_direction == ZDirection::Average)
-            .map(|(k,_v)|(*k, Self::calculate_q_value(max_mom, m_prime, m, k.mom, k.z)))
+            .map(|(k,_v)|(*k, Self::calculate_q_value(max_mom, m_prime, m, k.mom, k.z, estimator)))
             .collect()
     }
 
@@ -275,7 +281,7 @@ impl ExperimentData {
         down_v + ((up_v - down_v) * frac)
     }
 
-    fn integral_m_prim(data: &Vec<Complex64>, z: u8, mom: u8) -> Complex64 {
+    fn integral_m_prim(data: &Vec<Complex64>, z: u8, mom: u8, estimator: &str) -> Complex64 {
         let m: Complex64 = data[mom as usize];
         let int_mul = - Self::C_F * Self::ALFA_S_PI / 2.0;
         let g_e = (2.0*Self::GAMMA_E + 1.0).exp();
@@ -284,39 +290,43 @@ impl ExperimentData {
         }
         let v = 0.25 * (z as f64).powi(2) * Self::MI_A.powi(2)* g_e;
         let v = v.ln();
+        let est = estimator.build_estimator(data);
         unsafe {
             let re = Integrator::new(|x: f64|{
                 let b = (1.0+(x.powi(2)))/(1.0-x);
-                let m_u = Self::linear_interpolation(data, x*mom as f64).re;
+                let m_u = est.estimate(x*mom as f64).re;
+                let m = est.estimate(mom as f64);
                 let res = -v*b * (m_u - m.re);
                 res
             }).run(0.0..1.0).estimate_unchecked();
             let im = Integrator::new(|x: f64|{
                 let b = (1.0+(x.powi(2)))/(1.0-x);
-                let m_u = Self::linear_interpolation(data, x*mom as f64).im;
+                let m_u = est.estimate(x*mom as f64).im;
+                let m = est.estimate(mom as f64);
                 let res = -v*b * (m_u - m.im);
                 res
             }).run(0.0..1.0).estimate_unchecked();
-            let v = m + int_mul * Complex64::new(re, im);
+            let v = est.estimate(mom as f64); //+ int_mul * Complex64::new(re, im);
             v
         }
     }
 
-    fn integral_q(data: &Vec<Complex64>, _z: u8, mom: u8) -> Complex64 {
+    fn integral_q(data: &Vec<Complex64>, z: u8, mom: u8, estimator: &str) -> Complex64 {
         let mut data_cloned = data.clone();
         let m_prime = data_cloned.pop().unwrap();
-        let m: Complex64 = data_cloned[mom as usize];
         let int_mul = - Self::C_F * Self::ALFA_S_PI / 2.0;
+        let estimator = estimator.build_estimator(data);
+        let m = estimator.estimate(mom as f64);
         unsafe {
             let re = Integrator::new(|x: f64|{
                 let l = 4.0*((1.0-x).ln()/(1.0-x)) - 2.0*(1.0-x);
-                let m_u = Self::linear_interpolation(data, x*mom as f64).re;
+                let m_u = estimator.estimate(x*mom as f64).re;
                 let res = -l * (m_u - m.re);
                 res
             }).run(0.0..1.0).estimate_unchecked();
             let im = Integrator::new(|x: f64|{
                 let l = 4.0*((1.0-x).ln()/(1.0-x)) - 2.0*(1.0-x);
-                let m_u = Self::linear_interpolation(data, x*mom as f64).im;
+                let m_u = estimator.estimate(x*mom as f64).im;
                 let res = -l * (m_u - m.im);
                 res
             }).run(0.0..1.0).estimate_unchecked();
