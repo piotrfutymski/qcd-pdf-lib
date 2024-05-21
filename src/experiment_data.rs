@@ -12,7 +12,9 @@ use std::io::Write;
 use std::path::Path;
 use gkquad::prelude::AUTO;
 use gkquad::single::{IntegrationConfig, Integrator};
+use num::Complex;
 use num::complex::{Complex64, ComplexFloat};
+use special::Gamma;
 
 use crate::experiment_data::bootstrap_data::BootstrapData;
 use crate::experiment_data::function_estimator::ToFunctionEstimator;
@@ -74,11 +76,40 @@ impl ExperimentData {
         let max_mom = data.keys().map(|e|e.mom).max().unwrap_or_default();
         let max_z = data.keys().map(|e|e.z).max().unwrap_or_default();
         let reduced_m = Self::calculate_reduced_m(&data);
-        /*
-        let best_params_qv = Self::calculate_best_params(&q_averaged, true);
-        let best_params_qv2s = Self::calculate_best_params(&q_averaged, false);
-         */
         ExperimentData{ max_mom, max_z, data, reduced_m, m_prime: None, q: None, max_num_to_average, q_averaged: None, best_params_qv: None, best_params_qv2s: None, estimator: estimator.to_string()}
+    }
+
+    pub fn get_pdf_params_to_file(&mut self, imaginary: bool, filename:&str) {
+        let mut file = File::create(filename).unwrap();
+        let params = Self::calculate_best_params(self.q_averaged(), imaginary);
+        for i in 0..200 {
+            let x = i as f64 / 200.0;
+            let f = match imaginary {
+                true => BootstrapData::perform_operation_multiple(
+                    &vec![&params.a, &params.b, &params.n, &params.d],
+                    |vec|{
+                        let a = vec[0].re;
+                        let b = vec[1].re;
+                        let n = vec[2].re;
+                        let d = vec[3].re;
+                        Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0) * (1.0 + d * x.sqrt())
+                    }
+                ),
+                false => BootstrapData::perform_operation_multiple(
+                    &vec![&params.a, &params.b, &params.d],
+                    |vec|{
+                        let a = vec[0].re;
+                        let b = vec[1].re;
+                        let d = vec[2].re;
+                        let c_part =(Gamma::gamma(a+1.5)*Gamma::gamma(b+1.0)) * d / Gamma::gamma(a + b + 2.5);
+                        let normal_part = (Gamma::gamma(a+1.0)*Gamma::gamma(b+1.0))/ Gamma::gamma(a + b + 2.0);
+                        let n = 1.0/(c_part + normal_part);
+                        Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0) * (1.0 + d * x.sqrt())
+                    }
+                )
+            };
+            file.write(format!("{} {} {}\n",x, f.boot_average().re, f.boot_error().re).as_bytes()).unwrap();
+        }
     }
 
     pub fn convert_to_ioffe_time(mom: f64, z:u8) -> f64 {
@@ -262,7 +293,7 @@ impl ExperimentData {
                 .collect(),
             real
         );
-        optimizer.optimize(100,0.01)
+        optimizer.optimize(80,0.001)
     }
 
     fn get_from(data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> &BootstrapData {
@@ -306,7 +337,7 @@ impl ExperimentData {
                 let res = -v*b * (m_u - m.im);
                 res
             }).run(0.0..1.0).estimate_unchecked();
-            let v = est.estimate(mom as f64); //+ int_mul * Complex64::new(re, im);
+            let v = m + int_mul * Complex64::new(re, im);
             v
         }
     }

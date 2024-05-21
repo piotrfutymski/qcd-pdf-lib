@@ -1,0 +1,16 @@
+set datafile separator whitespace
+# Standard border
+set style line 11 lc rgb '#808080' lt 1 lw 3
+set border 0 back ls 11
+set tics out nomirror
+
+# Standard grid
+set style line 12 lc rgb '#808080' lt 0 lw 1
+set grid back ls 12
+unset grid
+
+set xlabel "x"
+set grid
+
+# Rysowanie wykresu
+plot 'results/unpol/data_re.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'results/unpol/data_re.dat' using 1:2 with lines lw 2 title "qv"

@@ -34,7 +34,7 @@ impl BootstrapData {
     }
 
     pub fn get_sample(&self, index: usize) -> Complex64 {
-        return if index > self.bootstrap_samples.len() {
+        return if index >= self.bootstrap_samples.len() {
             self.sample_0
         } else {
             self.bootstrap_samples[index]
