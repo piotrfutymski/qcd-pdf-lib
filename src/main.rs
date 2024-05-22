@@ -44,7 +44,6 @@ struct Args {
 fn main() {
 
     let args = Args::parse();
-
     println!("Calculating data from ./data/samples");
     let polarization_type = args.polarization_type.unwrap_or("g0".to_string());
     let mut experiment_data = ExperimentData::load(
@@ -58,16 +57,50 @@ fn main() {
     if unwrapped_matrix.as_str() == "qa"{
         ExperimentData::generate_output_plot_file_one_arg(experiment_data.q_averaged(), args.sample_count.unwrap_or(12), &args.filename.unwrap_or("data.dat".to_string()), !args.imaginary.unwrap_or(false));
     } else if unwrapped_matrix.as_str() == "pdf" {
-        experiment_data.get_pdf_params_to_file(false, "data_re.dat");
-        experiment_data.get_pdf_params_to_file(true, "data_i.dat");
         let mut experiment_data = ExperimentData::load(
             Path::new("./data/samples"),
             args.num_to_average.unwrap_or(8),
-            &polarization_type,
+            "g0",
+            "linear"
+        );
+        experiment_data.get_pdf_params_to_file("_g0");
+        let mut experiment_data = ExperimentData::load(
+            Path::new("./data/samples"),
+            args.num_to_average.unwrap_or(8),
+            "g0",
             "square"
         );
-        experiment_data.get_pdf_params_to_file(false, "data_re_square.dat");
-        experiment_data.get_pdf_params_to_file(true, "data_i_square.dat");
+        experiment_data.get_pdf_params_to_file("_g0_square");
+
+        let mut experiment_data = ExperimentData::load(
+            Path::new("./data/samples"),
+            args.num_to_average.unwrap_or(8),
+            "pol",
+            "linear"
+        );
+        experiment_data.get_pdf_params_to_file("_pol");
+        let mut experiment_data = ExperimentData::load(
+            Path::new("./data/samples"),
+            args.num_to_average.unwrap_or(8),
+            "pol",
+            "square"
+        );
+        experiment_data.get_pdf_params_to_file("_pol_square");
+
+        let mut experiment_data = ExperimentData::load(
+            Path::new("./data/samples"),
+            args.num_to_average.unwrap_or(8),
+            "tra",
+            "linear"
+        );
+        experiment_data.get_pdf_params_to_file("_tra");
+        let mut experiment_data = ExperimentData::load(
+            Path::new("./data/samples"),
+            args.num_to_average.unwrap_or(8),
+            "tra",
+            "square"
+        );
+        experiment_data.get_pdf_params_to_file("_tra_square");
     } else {
         let data = match unwrapped_matrix.as_str() {
             "m" => experiment_data.reduced_m(),
@@ -85,10 +118,4 @@ fn main() {
 
     }
 
-}
-
-
-#[test]
-fn test() {
-    let experiment_data = ExperimentData::load(Path::new("./data/samples"), 8, );
 }

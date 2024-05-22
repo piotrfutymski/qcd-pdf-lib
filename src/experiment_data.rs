@@ -51,6 +51,7 @@ pub struct ExperimentData{
     q_averaged: Option<HashMap<u8, BootstrapData>>,
     best_params_qv: Option<Parameters<BootstrapData>>,
     best_params_qv2s: Option<Parameters<BootstrapData>>,
+    polarization: String,
     estimator: String
 }
 
@@ -76,39 +77,44 @@ impl ExperimentData {
         let max_mom = data.keys().map(|e|e.mom).max().unwrap_or_default();
         let max_z = data.keys().map(|e|e.z).max().unwrap_or_default();
         let reduced_m = Self::calculate_reduced_m(&data);
-        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime: None, q: None, max_num_to_average, q_averaged: None, best_params_qv: None, best_params_qv2s: None, estimator: estimator.to_string()}
+        ExperimentData{ max_mom, max_z, data, reduced_m, m_prime: None, q: None, max_num_to_average, q_averaged: None, best_params_qv: None, best_params_qv2s: None, estimator: estimator.to_string(), polarization: polarization_type.to_string()}
     }
 
-    pub fn get_pdf_params_to_file(&mut self, imaginary: bool, filename:&str) {
-        let mut file = File::create(filename).unwrap();
-        let params = Self::calculate_best_params(self.q_averaged(), imaginary);
+    pub fn get_pdf_params_to_file(&mut self, filename: &str) {
+        let params_re = Self::calculate_best_params(self.q_averaged(), true);
+        let params_im = Self::calculate_best_params(self.q_averaged(), false);
+        let mut file_im = File::create(format!("data_im{}.dat", filename)).unwrap();
+        let mut file_re = File::create(format!("data_re{}.dat", filename)).unwrap();
+        let mut file_q = File::create(format!("data_q{}.dat", filename)).unwrap();
+        let mut file_q_ = File::create(format!("data_q_bar{}.dat", filename)).unwrap();
         for i in 0..200 {
             let x = i as f64 / 200.0;
-            let f = match imaginary {
-                true => BootstrapData::perform_operation_multiple(
-                    &vec![&params.a, &params.b, &params.n, &params.d],
-                    |vec|{
-                        let a = vec[0].re;
-                        let b = vec[1].re;
-                        let n = vec[2].re;
-                        let d = vec[3].re;
-                        Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0) * (1.0 + d * x.sqrt())
-                    }
-                ),
-                false => BootstrapData::perform_operation_multiple(
-                    &vec![&params.a, &params.b, &params.d],
-                    |vec|{
-                        let a = vec[0].re;
-                        let b = vec[1].re;
-                        let d = vec[2].re;
-                        let c_part =(Gamma::gamma(a+1.5)*Gamma::gamma(b+1.0)) * d / Gamma::gamma(a + b + 2.5);
-                        let normal_part = (Gamma::gamma(a+1.0)*Gamma::gamma(b+1.0))/ Gamma::gamma(a + b + 2.0);
-                        let n = 1.0/(c_part + normal_part);
-                        Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0) * (1.0 + d * x.sqrt())
-                    }
-                )
-            };
-            file.write(format!("{} {} {}\n",x, f.boot_average().re, f.boot_error().re).as_bytes()).unwrap();
+            let data_re = BootstrapData::perform_operation_multiple(
+                &vec![&params_re.a, &params_re.b, &params_re.d],
+                |vec|{
+                    let a = vec[0].re;
+                    let b = vec[1].re;
+                    let d = vec[2].re;
+                    let c_part =(Gamma::gamma(a+1.5)*Gamma::gamma(b+1.0)) * d / Gamma::gamma(a + b + 2.5);
+                    let normal_part = (Gamma::gamma(a+1.0)*Gamma::gamma(b+1.0))/ Gamma::gamma(a + b + 2.0);
+                    let n = 1.0/(c_part + normal_part);
+                    Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0) * (1.0 + d * x.sqrt())
+                });
+            let data_im = BootstrapData::perform_operation_multiple(
+                &vec![&params_im.a, &params_im.b, &params_im.n, &params_im.d],
+                |vec|{
+                    let a = vec[0].re;
+                    let b = vec[1].re;
+                    let n = vec[2].re;
+                    let d = vec[3].re;
+                    Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0) * (1.0 + d * x.sqrt())
+                });
+            let data_q = data_re.clone() + data_im.clone();
+            let data_q_ = data_im.clone() - data_re.clone();
+            file_re.write(format!("{} {} {}\n",x, data_re.boot_average().re, data_re.boot_error().re).as_bytes()).unwrap();
+            file_im.write(format!("{} {} {}\n",x, data_im.boot_average().re, data_im.boot_error().re).as_bytes()).unwrap();
+            file_q.write(format!("{} {} {}\n",x, data_q.boot_average().re/2.0, data_q.boot_error().re/2.0).as_bytes()).unwrap();
+            file_q_.write(format!("{} {} {}\n",x, data_q_.boot_average().re/2.0, data_q_.boot_error().re/2.0).as_bytes()).unwrap();
         }
     }
 
@@ -143,7 +149,7 @@ impl ExperimentData {
     pub fn m_prime(&mut self) -> &HashMap<DataInfo, BootstrapData> {
         if self.m_prime.is_none() {
             let mom = self.max_mom;
-            self.m_prime = Some(Self::calculate_m_prime(mom, &self.reduced_m, &self.estimator));
+            self.m_prime = Some(Self::calculate_m_prime(mom, &self.reduced_m, &self.estimator, &self.polarization));
             self.m_prime()
         }else{
             self.m_prime.as_ref().unwrap()
@@ -158,7 +164,7 @@ impl ExperimentData {
         if self.q.is_none(){
             self.m_prime();
             let reduced = self.m_prime.as_ref().unwrap();
-            self.q = Some(Self::calculate_q(self.max_mom, reduced, &self.reduced_m, self.estimator.as_str()));
+            self.q = Some(Self::calculate_q(self.max_mom, reduced, &self.reduced_m, self.estimator.as_str(), &self.polarization));
             self.q()
         }else{
             self.q.as_ref().unwrap()
@@ -230,21 +236,21 @@ impl ExperimentData {
             .collect()
     }
 
-    fn calculate_m_prime_value(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8, estimator: &str) -> BootstrapData {
+    fn calculate_m_prime_value(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8, estimator: &str, polarization: &str) -> BootstrapData {
         println!("Calculating m prime value for mom={}, z={}", mom, z);
         let vec: Vec<&BootstrapData> = (0..max_mom+1)
             .map(|e|Self::get_from(data, e, z))
             .collect();
-        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_m_prim(&c_data, z, mom, estimator)})
+        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_m_prim(&c_data, z, mom, estimator, polarization)})
     }
 
-    fn calculate_q_value(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8, estimator: &str) -> BootstrapData {
+    fn calculate_q_value(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8, estimator: &str, polarization: &str) -> BootstrapData {
         println!("Calculating q value for mom={}, z={}", mom, z);
         let mut vec: Vec<&BootstrapData> = (0..max_mom+1)
             .map(|e|Self::get_from(m, e, z))
             .collect();
         vec.push(Self::get_from(m_prime, mom, z));
-        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_q(&c_data, z, mom, estimator)})
+        BootstrapData::perform_operation_multiple(&vec, |c_data|{ Self::integral_q(&c_data, z, mom, estimator, polarization)})
     }
 
     fn calculate_q_averaged_value(data: &Vec<&BootstrapData>) -> BootstrapData {
@@ -255,17 +261,17 @@ impl ExperimentData {
             }
         })
     }
-    fn calculate_m_prime(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>, estimator: &str) -> HashMap<DataInfo, BootstrapData>{
+    fn calculate_m_prime(max_mom: u8, data: &HashMap<DataInfo, BootstrapData>, estimator: &str, polarization: &str) -> HashMap<DataInfo, BootstrapData>{
         data.iter()
             .filter(|(k,_v)|k.z_direction == ZDirection::Average)
-            .map(|(k,_v)|(*k, Self::calculate_m_prime_value(max_mom, data, k.mom, k.z, estimator)))
+            .map(|(k,_v)|(*k, Self::calculate_m_prime_value(max_mom, data, k.mom, k.z, estimator, polarization)))
             .collect()
     }
 
-    fn calculate_q(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, estimator: &str) -> HashMap<DataInfo, BootstrapData>{
+    fn calculate_q(max_mom: u8, m_prime: &HashMap<DataInfo, BootstrapData>, m: &HashMap<DataInfo, BootstrapData>, estimator: &str, polarization: &str) -> HashMap<DataInfo, BootstrapData>{
         m_prime.iter()
             .filter(|(k,_v)|k.z_direction == ZDirection::Average)
-            .map(|(k,_v)|(*k, Self::calculate_q_value(max_mom, m_prime, m, k.mom, k.z, estimator)))
+            .map(|(k,_v)|(*k, Self::calculate_q_value(max_mom, m_prime, m, k.mom, k.z, estimator, polarization)))
             .collect()
     }
 
@@ -293,7 +299,7 @@ impl ExperimentData {
                 .collect(),
             real
         );
-        optimizer.optimize(80,0.001)
+        optimizer.optimize(200,0.001)
     }
 
     fn get_from(data: &HashMap<DataInfo, BootstrapData>, mom: u8, z:u8) -> &BootstrapData {
@@ -312,7 +318,7 @@ impl ExperimentData {
         down_v + ((up_v - down_v) * frac)
     }
 
-    fn integral_m_prim(data: &Vec<Complex64>, z: u8, mom: u8, estimator: &str) -> Complex64 {
+    fn integral_m_prim(data: &Vec<Complex64>, z: u8, mom: u8, estimator: &str, polarization: &str) -> Complex64 {
         let m: Complex64 = data[mom as usize];
         let int_mul = - Self::C_F * Self::ALFA_S_PI / 2.0;
         let g_e = (2.0*Self::GAMMA_E + 1.0).exp();
@@ -322,16 +328,21 @@ impl ExperimentData {
         let v = 0.25 * (z as f64).powi(2) * Self::MI_A.powi(2)* g_e;
         let v = v.ln();
         let est = estimator.build_estimator(data);
+        let b_func = match polarization {
+            "g0" | "pol" => |x:f64|(1.0+(x.powi(2)))/(1.0-x),
+            "tra"=> |x:f64|(2.0*x)/(1.0-x),
+            _ => panic!()
+        };
         unsafe {
             let re = Integrator::new(|x: f64|{
-                let b = (1.0+(x.powi(2)))/(1.0-x);
+                let b: f64 = b_func(x);
                 let m_u = est.estimate(x*mom as f64).re;
                 let m = est.estimate(mom as f64);
                 let res = -v*b * (m_u - m.re);
                 res
             }).run(0.0..1.0).estimate_unchecked();
             let im = Integrator::new(|x: f64|{
-                let b = (1.0+(x.powi(2)))/(1.0-x);
+                let b: f64 = b_func(x);
                 let m_u = est.estimate(x*mom as f64).im;
                 let m = est.estimate(mom as f64);
                 let res = -v*b * (m_u - m.im);
@@ -342,21 +353,27 @@ impl ExperimentData {
         }
     }
 
-    fn integral_q(data: &Vec<Complex64>, z: u8, mom: u8, estimator: &str) -> Complex64 {
+    fn integral_q(data: &Vec<Complex64>, z: u8, mom: u8, estimator: &str, polarization: &str) -> Complex64 {
         let mut data_cloned = data.clone();
         let m_prime = data_cloned.pop().unwrap();
         let int_mul = - Self::C_F * Self::ALFA_S_PI / 2.0;
         let estimator = estimator.build_estimator(data);
         let m = estimator.estimate(mom as f64);
+        let l_func = match polarization {
+            "g0"=> |x:f64|{4.0*((1.0-x).ln()/(1.0-x)) - 2.0*(1.0-x)},
+            "tra"=> |x:f64|{4.0*((1.0-x).ln()/(1.0-x))},
+            "pol"=> |x:f64|{4.0*((1.0-x).ln()/(1.0-x)) - 4.0*(1.0-x)},
+            _ => panic!()
+        };
         unsafe {
             let re = Integrator::new(|x: f64|{
-                let l = 4.0*((1.0-x).ln()/(1.0-x)) - 2.0*(1.0-x);
+                let l: f64 = l_func(x);
                 let m_u = estimator.estimate(x*mom as f64).re;
                 let res = -l * (m_u - m.re);
                 res
             }).run(0.0..1.0).estimate_unchecked();
             let im = Integrator::new(|x: f64|{
-                let l = 4.0*((1.0-x).ln()/(1.0-x)) - 2.0*(1.0-x);
+                let l: f64 = l_func(x);
                 let m_u = estimator.estimate(x*mom as f64).im;
                 let res = -l * (m_u - m.im);
                 res

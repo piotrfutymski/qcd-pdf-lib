@@ -13,4 +13,4 @@ set xlabel "x"
 set grid
 
 # Rysowanie wykresu
-plot 'results/unpol/data_re.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'results/unpol/data_re.dat' using 1:2 with lines lw 2 title "qv"
+plot 'data/my_results/unpol/2par/data_re.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'data/my_results/unpol/2par/data_re.dat' using 1:2 with lines lw 2 title "qv"
