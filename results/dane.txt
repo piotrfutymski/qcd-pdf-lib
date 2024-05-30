@@ -1,2 +1,0 @@
-100 osobników, wariacja w mniejszym zakresie (+-0.5)
-200 osobników, wariacja w większym zakresie (+-1)

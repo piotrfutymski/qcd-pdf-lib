@@ -12,5 +12,7 @@ unset grid
 set xlabel "x"
 set grid
 
+set yrange [-1:5]
+
 # Rysowanie wykresu
-plot 'data/my_results/unpol/2par/data_re.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'data/my_results/unpol/2par/data_re.dat' using 1:2 with lines lw 2 title "qv"
+plot 'my_results/2par_1/data_im_g0.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'my_results/2par_1/data_im_g0.dat' using 1:2 with lines lw 2 title "qv", 'my_results/3par_1/data_im_g0.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'my_results/3par_1/data_im_g0.dat' using 1:2 with lines lw 2 title "qv"
