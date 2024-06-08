@@ -15,4 +15,4 @@ set grid
 set yrange [-1:5]
 
 # Rysowanie wykresu
-plot 'my_results/2par_1/data_im_g0.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'my_results/2par_1/data_im_g0.dat' using 1:2 with lines lw 2 title "qv", 'my_results/3par_1/data_im_g0.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'my_results/3par_1/data_im_g0.dat' using 1:2 with lines lw 2 title "qv"
+plot 'results/3_par_8/data_q_g0.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'results/3_par_8/data_q_g0.dat' using 1:2 with lines lw 2 title "qv", 'results/2_par_8/data_q_g0.dat' using 1:($2+$3):($2-$3) with filledcurves notitle, 'results/2_par_8/data_q_g0.dat' using 1:2 with lines lw 2 title "qv"

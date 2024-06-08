@@ -195,32 +195,32 @@ impl Optimizer {
         }
         self.last_best
     }
-    pub fn integral_a_b_n_cos(a: f64, b:f64, d:f64, n: f64, ni: f64) -> f64{
+    pub fn integral_a_b_n_cos(a: f64, b:f64, n:f64, d: f64, ni: f64, iters: usize) -> f64{
         unsafe {
             let v = Integrator::new(|x: f64|{
-                (x*ni).cos() * n * x.powf(a) * (1.0-x).powf(b) * (1.0 + d * x.sqrt())
-            }).max_iters(3).run(0.0..1.0).estimate_unchecked();
+                (x*ni).cos() * n * x.powf(a) * (1.0-x).powf(b)
+            }).max_iters(iters).run(0.0..1.0).estimate_unchecked();
             v
         }
     }
 
-    pub fn integral_a_b_n_sin(a: f64, b:f64, n: f64, d: f64, ni: f64) -> f64{
+    pub fn integral_a_b_n_sin(a: f64, b:f64, n: f64, d: f64, ni: f64, iters: usize) -> f64{
         unsafe {
             let v = Integrator::new(|x: f64|{
-                (x*ni).sin() * n * x.powf(a) * (1.0-x).powf(b) * (1.0 + d * x.sqrt())
-            }).max_iters(3).run(0.0..1.0).estimate_unchecked();
+                (x*ni).sin() * n * x.powf(a) * (1.0-x).powf(b)
+            }).max_iters(iters).run(0.0..1.0).estimate_unchecked();
             v
         }
     }
     pub fn calculate_chi_elem_a_b_n(ni: f64, data: &BootstrapData, a: f64, b:f64, n: f64, d:f64, real: bool, sample_num: usize, error: Complex64) -> f64 {
         match real {
             true => {
-                let int_res = Self::integral_a_b_n_cos(a,b,n,d,ni);
+                let int_res = Self::integral_a_b_n_cos(a,b,n,d,ni,3);
                 let res = (data.get_sample(sample_num).re - int_res).powi(2)/error.re;
                 res
             }
             false => {
-                let int_res = Self::integral_a_b_n_sin(a,b,n,d,ni);
+                let int_res = Self::integral_a_b_n_sin(a,b,n,d,ni,3);
                 let res = (data.get_sample(sample_num).im - int_res).powi(2)/error.im;
                 res
             }
@@ -230,7 +230,7 @@ impl Optimizer {
     pub fn calculate_chi_qv(data: &Vec<(f64, BootstrapData, Complex64)>, a: f64, b:f64, d:f64, sample_num: usize) -> f64 {
         let c_part =(Gamma::gamma(a+1.5)*Gamma::gamma(b+1.0)) * d / Gamma::gamma(a + b + 2.5);
         let normal_part = (Gamma::gamma(a+1.0)*Gamma::gamma(b+1.0))/ Gamma::gamma(a + b + 2.0);
-        let n = 1.0/(c_part + normal_part);
+        let n = 1.0/(normal_part);
         let res = data
             .iter()
             .map(|(ni,data, error)|Self::calculate_chi_elem_a_b_n(*ni, data, a, b, n,d, true,sample_num, *error))
@@ -238,7 +238,7 @@ impl Optimizer {
         res
     }
 
-    pub fn calculate_chi_qv2s(data: &Vec<(f64, BootstrapData, Complex64)>, a: f64, b:f64, d: f64, n:f64, sample_num: usize) -> f64 {
+    pub fn calculate_chi_qv2s(data: &Vec<(f64, BootstrapData, Complex64)>, a: f64, b:f64, n: f64, d:f64, sample_num: usize) -> f64 {
         let res = data
             .iter()
             .map(|(ni,data, error)|Self::calculate_chi_elem_a_b_n(*ni, data, a, b, n,d, false,sample_num, *error))

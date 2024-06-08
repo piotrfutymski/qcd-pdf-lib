@@ -87,6 +87,9 @@ impl ExperimentData {
         let mut file_re = File::create(format!("data_re{}.dat", filename)).unwrap();
         let mut file_q = File::create(format!("data_q{}.dat", filename)).unwrap();
         let mut file_q_ = File::create(format!("data_q_bar{}.dat", filename)).unwrap();
+        let mut file_qre = File::create(format!("data_qre{}.dat", filename)).unwrap();
+        let mut file_qim = File::create(format!("data_qim{}.dat", filename)).unwrap();
+        let max_nu = Self::convert_to_ioffe_time(self.max_mom as f64, self.max_num_to_average);
         for i in 0..200 {
             let x = i as f64 / 200.0;
             let data_re = BootstrapData::perform_operation_multiple(
@@ -97,8 +100,8 @@ impl ExperimentData {
                     let d = vec[2].re;
                     let c_part =(Gamma::gamma(a+1.5)*Gamma::gamma(b+1.0)) * d / Gamma::gamma(a + b + 2.5);
                     let normal_part = (Gamma::gamma(a+1.0)*Gamma::gamma(b+1.0))/ Gamma::gamma(a + b + 2.0);
-                    let n = 1.0/(c_part + normal_part);
-                    Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0) * (1.0 + d * x.sqrt())
+                    let n = 1.0/(normal_part);
+                    Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0)
                 });
             let data_im = BootstrapData::perform_operation_multiple(
                 &vec![&params_im.a, &params_im.b, &params_im.n, &params_im.d],
@@ -107,14 +110,38 @@ impl ExperimentData {
                     let b = vec[1].re;
                     let n = vec[2].re;
                     let d = vec[3].re;
-                    Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0) * (1.0 + d * x.sqrt())
+                    Complex::new(n*x.powf(a)*(1.0-x).powf(b), 0.0)
                 });
             let data_q = data_re.clone() + data_im.clone();
             let data_q_ = data_im.clone() - data_re.clone();
+            let nuu = i as f64 * max_nu / 200.0;
+            let data_ree = BootstrapData::perform_operation_multiple(
+                &vec![&params_re.a, &params_re.b, &params_re.d],
+                |vec|{
+                    let a = vec[0].re;
+                    let b = vec[1].re;
+                    let d = vec[2].re;
+                    let c_part =(Gamma::gamma(a+1.5)*Gamma::gamma(b+1.0)) * d / Gamma::gamma(a + b + 2.5);
+                    let normal_part = (Gamma::gamma(a+1.0)*Gamma::gamma(b+1.0))/ Gamma::gamma(a + b + 2.0);
+                    let n = 1.0/(normal_part);
+                    Complex::new(Optimizer::integral_a_b_n_cos(a,b,n,d, nuu, 100), 0.0)
+                });
+            let data_imm = BootstrapData::perform_operation_multiple(
+                &vec![&params_im.a, &params_im.b, &params_im.n, &params_im.d],
+                |vec|{
+                    let a = vec[0].re;
+                    let b = vec[1].re;
+                    let n = vec[2].re;
+                    let d = vec[3].re;
+                    Complex::new(Optimizer::integral_a_b_n_sin(a,b,n,d, nuu, 100), 0.0)
+                });
             file_re.write(format!("{} {} {}\n",x, data_re.boot_average().re, data_re.boot_error().re).as_bytes()).unwrap();
             file_im.write(format!("{} {} {}\n",x, data_im.boot_average().re, data_im.boot_error().re).as_bytes()).unwrap();
             file_q.write(format!("{} {} {}\n",x, data_q.boot_average().re/2.0, data_q.boot_error().re/2.0).as_bytes()).unwrap();
             file_q_.write(format!("{} {} {}\n",x, data_q_.boot_average().re/2.0, data_q_.boot_error().re/2.0).as_bytes()).unwrap();
+
+            file_qre.write(format!("{} {} {}\n",nuu, data_ree.boot_average().re, data_ree.boot_error().re).as_bytes()).unwrap();
+            file_qim.write(format!("{} {} {}\n",nuu, data_imm.boot_average().re, data_imm.boot_error().re).as_bytes()).unwrap();
         }
     }
 
