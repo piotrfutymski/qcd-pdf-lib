@@ -1,2 +1,2 @@
 # qcd-pdf-lib
-Tools used by me in my master thesis from parton physics
+Tools used to generate data needed for my QCD lattice thesis
