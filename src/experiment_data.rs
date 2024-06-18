@@ -17,7 +17,7 @@ use num::complex::{Complex64, ComplexFloat};
 use special::Gamma;
 
 use crate::experiment_data::bootstrap_data::BootstrapData;
-use crate::experiment_data::function_estimator::ToFunctionEstimator;
+use crate::experiment_data::function_estimator::{FunctionEstimator, LinearInterpolationEstimator, SquareInterpolationEstimator, ToFunctionEstimator};
 use crate::experiment_data::optimizer::{Optimizer, Parameters};
 
 #[derive(PartialEq, Eq, Hash, Clone, Default, Copy)]
@@ -145,12 +145,49 @@ impl ExperimentData {
         }
     }
 
+    pub fn generate_estimated_results(&mut self, z: u8) {
+        let mut file_square = File::create(format!("square_{}.dat", z)).unwrap();
+        let mut file_inter = File::create(format!("inter_{}.dat", z)).unwrap();
+        let mut file_square_im = File::create(format!("square_{}_im.dat", z)).unwrap();
+        let mut file_inter_im = File::create(format!("inter_{}_im.dat", z)).unwrap();
+        let max_mom = self.max_mom+1;
+        let data = self.reduced_m();
+        let vec: Vec<&BootstrapData> = (0..max_mom)
+            .map(|e|Self::get_from(data, e, z))
+            .collect();
+        for i in 0..200 {
+            let x = i as f64 / 200.0;
+            let arg = x * (max_mom - 1) as f64;
+            let ioffe = Self::convert_to_ioffe_time(arg, z);
+            let data_square = BootstrapData::perform_operation_multiple(
+                &vec,
+                |vec|{
+                    let estimator = SquareInterpolationEstimator::new(&vec);
+                    estimator.estimate(arg)
+                });
+            let data_inter = BootstrapData::perform_operation_multiple(
+                &vec,
+                |vec|{
+                    let estimator = LinearInterpolationEstimator::new(&vec);
+                    estimator.estimate(arg)
+                });
+            file_square.write(format!("{} {} {}\n",ioffe, data_square.boot_average().re, data_square.boot_error().re).as_bytes()).unwrap();
+            file_inter.write(format!("{} {} {}\n",ioffe, data_inter.boot_average().re, data_inter.boot_error().re).as_bytes()).unwrap();
+            file_square_im.write(format!("{} {} {}\n",ioffe, data_square.boot_average().im, data_square.boot_error().im).as_bytes()).unwrap();
+            file_inter_im.write(format!("{} {} {}\n",ioffe, data_inter.boot_average().im, data_inter.boot_error().im).as_bytes()).unwrap();
+        }
+
+    }
+
     pub fn convert_to_ioffe_time(mom: f64, z:u8) -> f64 {
         mom * z as f64 * 2.0 * PI / Self::LATTICE_LENGTH as f64
     }
 
     pub fn convert_to_ioffe_time_one_arg(ni: u8) -> f64 {
         ni as f64 * 2.0 * PI / Self::LATTICE_LENGTH as f64
+    }
+    pub fn convert_to_ioffe_time_one_argf64(ni: f64) -> f64 {
+        ni * 2.0 * PI / Self::LATTICE_LENGTH as f64
     }
 
     pub fn convert_from_ioffe_time(it: f64, z:u8) -> f64 {

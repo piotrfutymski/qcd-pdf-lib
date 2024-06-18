@@ -1,0 +1,24 @@
+set datafile separator whitespace
+
+# Standard border
+set style line 11 lc rgb '#808080' lt 1 lw 3
+set border 0 back ls 11
+set tics out nomirror
+
+# Standard grid
+set style line 12 lc rgb '#808080' lt 0 lw 1
+set grid back ls 12
+unset grid
+
+set xlabel "v"
+set grid
+
+set terminal pngcairo transparent size 640,480
+set output 'pic/g0/inter_5_re.png'
+
+# Rysowanie wykresu z odcieniami żółtych, niebieskich i zielonych
+plot 'inter_5.dat' using 1:($2+$3):($2-$3) with filledcurves fs transparent solid 0.25 fc rgb "#009933" notitle, \
+     'inter_5.dat' using 1:2 with lines lw 2 lc rgb "#009933" title "z/a=5 linear int.", \
+     'square_5.dat' using 1:($2+$3):($2-$3) with filledcurves fs transparent solid 0.25 fc rgb "#b800e6" notitle, \
+     'square_5.dat' using 1:2 with lines lw 2 lc rgb "#b800e6" title "z/a=5 poly. int.", \
+     '5_dat.dat' using 1:2:3 t 'z/a=5' with yerrorbars

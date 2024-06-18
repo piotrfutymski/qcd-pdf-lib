@@ -50,7 +50,7 @@ fn main() {
         Path::new("./data/samples"),
         args.num_to_average.unwrap_or(8),
         &polarization_type,
-        "linear"
+        &args.estimator.unwrap_or("linear".to_string())
     );
     println!("Data calculated, printing output");
     let unwrapped_matrix = args.matrix.unwrap_or(String::from("pdf"));
@@ -101,6 +101,8 @@ fn main() {
             "square"
         );
         experiment_data.get_pdf_params_to_file("_tra_square");
+    } else if unwrapped_matrix.as_str() == "est"{
+       experiment_data.generate_estimated_results(args.num_to_average.unwrap())
     } else {
         let data = match unwrapped_matrix.as_str() {
             "m" => experiment_data.reduced_m(),
