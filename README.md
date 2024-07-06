@@ -1,2 +1,2 @@
 # qcd-pdf-lib
-Tools used to generate data needed for my QCD lattice thesis
+Computational tools used to generate data needed for my lattice QCD thesis about parton distribution functions.

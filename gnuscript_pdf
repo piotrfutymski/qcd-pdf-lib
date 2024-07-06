@@ -16,16 +16,16 @@ set grid
 set yrange [-1: 5]
 
 set terminal pngcairo transparent size 640,480
-set output 'pic/g0/qv2s.png'
+set output 'pic/pol/q_bar_square.png'
 
 # Rysowanie wykresu z odcieniami żółtych, niebieskich i zielonych
-plot 'results/3_par_8/data_im_g0.dat' using 1:($2+$3):($2-$3) with filledcurves fs transparent solid 0.25 fc rgb "#009933" notitle, \
-     'results/3_par_8/data_im_g0.dat' using 1:2 with lines lw 2 lc rgb "#009933" title "qv2s 3 parameters, z/a=8", \
-     'results/2_par_8/data_im_g0.dat' using 1:($2+$3):($2-$3) with filledcurves fs transparent solid 0.25 fc rgb "#b800e6" notitle, \
-     'results/2_par_8/data_im_g0.dat' using 1:2 with lines lw 2 lc rgb "#b800e6" title "qv2s 2 parameters, z/a=8", \
-     'results/3_par_6/data_im_g0.dat' using 1:($2+$3):($2-$3) with filledcurves fs transparent solid 0.25 fc rgb "#cccc00" notitle, \
-     'results/3_par_6/data_im_g0.dat' using 1:2 with lines lw 2 lc rgb "#cccc00" title "q 3 parameters, z/a=6", \
-     'results/2_par_6/data_im_g0.dat' using 1:($2+$3):($2-$3) with filledcurves fs transparent solid 0.25 fc rgb "#ff0000" notitle, \
-     'results/2_par_6/data_im_g0.dat' using 1:2 with lines lw 2 lc rgb "#ff0000" title "q 3 parameters, z/a=6", \
-     'data_experiment/unpol.dat' using 1:($2+$3):($2-$3) with filledcurves fs transparent solid 0.25 fc rgb "#0066ff" notitle, \
-     'data_experiment/unpol.dat' using 1:($2) with lines lw 2 lc rgb "#0066ff" title "q NNPDF"
+plot 'results/3_par_8/data_q_bar_pol_square.dat' using 1:(1.1516*($2+$3)):(1.1516*($2-$3)) with filledcurves fs transparent solid 0.25 fc rgb "#009933" notitle, \
+     'results/3_par_8/data_q_bar_pol_square.dat' using 1:(1.1516*$2) with lines lw 2 lc rgb "#009933" title "q bar 3 parameters, z/a=8", \
+     'results/2_par_8/data_q_bar_pol_square.dat' using 1:(1.1516*($2+$3)):(1.1516*($2-$3)) with filledcurves fs transparent solid 0.25 fc rgb "#b800e6" notitle, \
+     'results/2_par_8/data_q_bar_pol_square.dat' using 1:(1.1516*$2) with lines lw 2 lc rgb "#b800e6" title "q bar 2 parameters, z/a=8", \
+     'results/3_par_6/data_q_bar_pol_square.dat' using 1:(1.1516*($2+$3)):(1.1516*($2-$3)) with filledcurves fs transparent solid 0.25 fc rgb "#cccc00" notitle, \
+     'results/3_par_6/data_q_bar_pol_square.dat' using 1:(1.1516*$2) with lines lw 2 lc rgb "#cccc00" title "q bar 3 parameters, z/a=6", \
+     'results/2_par_6/data_q_bar_pol_square.dat' using 1:(1.1516*($2+$3)):(1.1516*($2-$3)) with filledcurves fs transparent solid 0.25 fc rgb "#ff0000" notitle, \
+     'results/2_par_6/data_q_bar_pol_square.dat' using 1:(1.1516*$2) with lines lw 2 lc rgb "#ff0000" title "q bar 3 parameters, z/a=6"#, \
+     #'data_experiment/JAM.dat' using 1:($6/$1 + $7/$1):($6/$1 -$7/$1) with filledcurves fs transparent solid 0.25 fc rgb "#0066ff" notitle, \
+     #'data_experiment/JAM.dat' using 1:($6/$1) with lines lw 2 lc rgb "#0066ff" title "qv JAM"
